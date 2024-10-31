@@ -2,69 +2,102 @@
 
 use anchor_lang::prelude::*;
 
-declare_id!("AsjZ3kWAUSQRNt2pZVeJkywhZ6gpLpHZmJjduPmKZDZZ");
+declare_id!("BV9YoLajPUZxnEpXDECYCxNLZzAP2J98E3Wd6AuNmn91");
 
 #[program]
 pub mod cruddy {
     use super::*;
 
-  pub fn close(_ctx: Context<CloseCruddy>) -> Result<()> {
+  //initialize diary entry account
+  pub fn create_diary_entry(ctx: Context<CreateEntry>, title: String, message: String) -> Result<()> {
+    let diary_entry = &mut ctx.accounts.diary_entry;
+    diary_entry.owner = *ctx.accounts.owner.key;
+    diary_entry.title = title;
+    diary_entry.message = message;
+
     Ok(())
   }
 
-  pub fn decrement(ctx: Context<Update>) -> Result<()> {
-    ctx.accounts.cruddy.count = ctx.accounts.cruddy.count.checked_sub(1).unwrap();
+  pub fn update_diary_entry(ctx: Context<UpdateEntry>, _title:String, message: String) -> Result<()> {
+    let diary_entry = &mut ctx.accounts.diary_entry;
+    diary_entry.message = message;
+
     Ok(())
   }
 
-  pub fn increment(ctx: Context<Update>) -> Result<()> {
-    ctx.accounts.cruddy.count = ctx.accounts.cruddy.count.checked_add(1).unwrap();
-    Ok(())
-  }
-
-  pub fn initialize(_ctx: Context<InitializeCruddy>) -> Result<()> {
-    Ok(())
-  }
-
-  pub fn set(ctx: Context<Update>, value: u8) -> Result<()> {
-    ctx.accounts.cruddy.count = value.clone();
+  pub fn delete_diary_entry(_ctx: Context<DeleteEntry>, _title: String) -> Result<()> {
+    //account handling takes place in data structure
     Ok(())
   }
 }
 
 #[derive(Accounts)]
-pub struct InitializeCruddy<'info> {
-  #[account(mut)]
-  pub payer: Signer<'info>,
-
+//grab title from instruction
+#[instruction(title: String)]
+pub struct CreateEntry<'info> {
   #[account(
-  init,
-  space = 8 + Cruddy::INIT_SPACE,
-  payer = payer
+    init,
+    seeds = [title.as_bytes(), owner.key().as_ref()],
+    bump,
+    space = 8 + DiaryEntryState::INIT_SPACE,
+    payer = owner,
   )]
-  pub cruddy: Account<'info, Cruddy>,
+  //naming acount
+  pub diary_entry: Account<'info, DiaryEntryState>,
+
+  #[account(mut)]
+  pub owner: Signer<'info>,
+
   pub system_program: Program<'info, System>,
 }
-#[derive(Accounts)]
-pub struct CloseCruddy<'info> {
-  #[account(mut)]
-  pub payer: Signer<'info>,
 
+#[derive(Accounts)]
+#[instruction(title: String)]
+pub struct UpdateEntry<'info> {
   #[account(
-  mut,
-  close = payer, // close account and return lamports to payer
+    mut,
+    seeds = [title.as_bytes(), owner.key().as_ref()],
+    bump,
+    //extending and reducing message will also change price of storage(extra fee or refund some)
+    realloc = 8 + DiaryEntryState::INIT_SPACE,
+    realloc::payer = owner,
+    //reset original calc of space then recalculate
+    realloc::zero = true,
   )]
-  pub cruddy: Account<'info, Cruddy>,
+  pub diary_entry: Account<'info, DiaryEntryState>,
+
+  //pass account through
+  #[account(mut)]
+  pub owner: Signer<'info>,
+
+  pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct Update<'info> {
+#[instruction(title: String)]
+pub struct DeleteEntry<'info> {
+  #[account(
+    mut,
+    seeds = [title.as_bytes(), owner.key().as_ref()],
+    bump,
+    //close account if pub key matches signers key
+    close = owner,
+  )]
+  pub dairy_entry: Account<'info, DiaryEntryState>,
+
   #[account(mut)]
-  pub cruddy: Account<'info, Cruddy>,
+  //specify owner
+  pub owner: Signer<'info>,
+
+  pub system_program: Program<'info, System>,
 }
 
 #[account]
 #[derive(InitSpace)]
-pub struct Cruddy {
-  count: u8,
+pub struct DiaryEntryState {
+  pub owner: Pubkey,
+  #[max_len(50)]
+  pub title: String,
+  #[max_len(1000)]
+  pub message: String,
 }
